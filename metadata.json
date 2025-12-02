@@ -1,0 +1,5 @@
+{
+  "name": "TRIZ Tree Visualizer",
+  "description": "Interactive visualization of an asynchronous AI-driven tree expansion algorithm for problem solving.",
+  "requestFramePermissions": []
+}
