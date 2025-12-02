@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const runningRef = useRef(false);
   const treeRef = useRef(tree); 
   const configRef = useRef(config);
+  const previousDepthRef = useRef<number>(0);
 
   useEffect(() => { treeRef.current = tree; }, [tree]);
   useEffect(() => { configRef.current = config; }, [config]);
@@ -46,10 +47,10 @@ const App: React.FC = () => {
       type
     };
     
-    // Keep only the last 50 logs to prevent list from getting too long
+    // Keep only the last 5 logs to prevent list from getting too long
     setLogs(prev => {
       const updated = [...prev, entry];
-      return updated.length > 50 ? updated.slice(updated.length - 50) : updated;
+      return updated.length > 5 ? updated.slice(updated.length - 5) : updated;
     });
   };
 
@@ -63,6 +64,7 @@ const App: React.FC = () => {
     if (!runningRef.current) return;
 
     // 1. Identify unexpanded nodes
+    // logic in findUnexpandedNodes ensures DEEPEST nodes come first (Depth-First Strategy)
     const unexpanded = findUnexpandedNodes(treeRef.current, configRef.current.maxDepth);
 
     if (unexpanded.length === 0) {
@@ -71,10 +73,30 @@ const App: React.FC = () => {
       return;
     }
 
-    // Determine batch size: Randomly 1 or 2 nodes
-    const maxBatchSize = 2;
-    const batchCount = Math.min(unexpanded.length, Math.floor(Math.random() * maxBatchSize) + 1);
+    // --- STRATEGY LOGIC ---
+    const currentStats = getTreeStats(treeRef.current);
+    const targetDepth = configRef.current.maxDepth;
+
+    // Phase 1: First Path (Probing)
+    // If we haven't reached the target depth yet, strict single-file drill down.
+    const isFirstPathPhase = currentStats.maxLevel < targetDepth;
+
+    // Phase 2: Backfill (Expansion)
+    // Once depth is established, we can process multiple nodes concurrently.
+    const maxBatchSize = isFirstPathPhase ? 1 : 2;
+    const batchCount = isFirstPathPhase ? 1 : (Math.floor(Math.random() * maxBatchSize) + 1);
+
+    // Slice based on sort (Deepest first)
     const nodesToProcess = unexpanded.slice(0, batchCount);
+    
+    // Logging logic for Strategy transitions
+    const currentDepth = nodesToProcess[0].level;
+    if (currentDepth > previousDepthRef.current) {
+        // Drilling down...
+    } else if (currentDepth < previousDepthRef.current) {
+        addLog(`Branch complete. Backtracking to Level ${currentDepth}...`, 'warning');
+    }
+    previousDepthRef.current = currentDepth;
 
     const stepDuration = configRef.current.simulationSpeedMs;
 
@@ -97,7 +119,7 @@ const App: React.FC = () => {
     });
     
     const nodeNames = nodesToProcess.map(n => `"${n.prompt.split(' ')[0]}..."`).join(' & ');
-    addLog(`Sending batch [${nodeNames}] to Expansion Module...`, 'process');
+    addLog(`Sending [${nodeNames}] to Module...`, 'process');
     
     // Wait
     await new Promise(resolve => setTimeout(resolve, stepDuration * 0.3));
@@ -128,7 +150,7 @@ const App: React.FC = () => {
       status: 'completed',
       outputs: processorOutputs
     }));
-    addLog(`Module generated ${totalGenerated} solutions for ${batchCount} nodes.`, 'info');
+    addLog(`Generated ${totalGenerated} nodes for Level ${currentDepth + 1}.`, 'info');
 
     // Wait (Show results on module)
     await new Promise(resolve => setTimeout(resolve, stepDuration * 0.3));
@@ -137,7 +159,7 @@ const App: React.FC = () => {
     // --- PHASE 4: UPDATE TREE ---
     let newTree = treeRef.current;
     
-    // Apply updates sequentially (batch update)
+    // Apply updates
     processorOutputs.forEach(output => {
         newTree = updateTreeWithNewNodes(newTree, output.parentId, output.children);
     });
@@ -164,6 +186,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isRunning) {
       addLog('Simulation started.', 'info');
+      // Reset depth ref on start
+      previousDepthRef.current = 0;
       runSimulationStep();
     } else {
         if (logs.length > 0 && processorState.status !== 'idle') {

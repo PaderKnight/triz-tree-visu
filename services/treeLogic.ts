@@ -45,10 +45,15 @@ export const getTreeStats = (root: TreeNode) => {
 
 export const findUnexpandedNodes = (root: TreeNode, maxDepth: number): TreeNode[] => {
   const unexpanded: TreeNode[] = [];
+  // Use a simple index to track DFS order (Left-to-Right)
+  let visitOrder = 0;
   
   const traverse = (node: TreeNode) => {
     // If it's not expanded and hasn't reached max depth
     if (!node.isExpanded && node.level < maxDepth) {
+      // We attach a temporary sort index property (conceptually)
+      // Here we rely on the array push order which follows DFS
+      (node as any)._dfsIndex = visitOrder++;
       unexpanded.push(node);
     }
     // Continue traversing even if this specific node is expanded
@@ -56,9 +61,16 @@ export const findUnexpandedNodes = (root: TreeNode, maxDepth: number): TreeNode[
   };
 
   traverse(root);
-  // Sort by level (deepest first, similar to Python logic, or shallowest first)
-  // The Python logic sorted by (-level, id), so deepest first.
-  return unexpanded.sort((a, b) => b.level - a.level);
+  
+  // Sort Logic:
+  // 1. Level DESC (Deepest first) -> This ensures "Depth-First" priority over breadth.
+  // 2. Index ASC (Left-most first) -> This ensures we stick to the current branch instead of jumping to a sibling's branch at the same level.
+  return unexpanded.sort((a, b) => {
+    if (b.level !== a.level) {
+      return b.level - a.level;
+    }
+    return ((a as any)._dfsIndex || 0) - ((b as any)._dfsIndex || 0);
+  });
 };
 
 // Simulate the AI scoring and expansion
